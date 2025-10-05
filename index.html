@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>退職まで 日めくりカウントダウン</title>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --paper: #ffffff;
+        --ink: #1c1d22;
+        --accent: #e53935;
+        --muted: #6b7280;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", Meiryo, system-ui, sans-serif;
+        color: var(--ink);
+        background: radial-gradient(1200px 600px at 50% -200px, #ffffff, var(--bg));
+      }
+      .wrap {
+        min-height: 100%;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+      header, footer {
+        padding: 16px 20px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(18px, 2.2vw, 22px);
+        font-weight: 700;
+        letter-spacing: .02em;
+      }
+      .calendar {
+        margin: 12px auto 0;
+        width: min(92vw, 520px);
+        background: var(--paper);
+        border-radius: 14px;
+        box-shadow: 0 12px 40px rgba(0,0,0,.08), inset 0 2px 0 #f2f3f7;
+        padding: 16px 16px 22px;
+        position: relative;
+      }
+      .calendar::before, .calendar::after {
+        /* binding holes */
+        content: "";
+        position: absolute;
+        top: 12px;
+        width: 12px; height: 12px;
+        background: radial-gradient(circle at 35% 35%, #bbb, #888 65%, #666 66%);
+        border-radius: 50%;
+        box-shadow: 0 1px 0 rgba(0,0,0,.25) inset;
+      }
+      .calendar::before { left: 22px; }
+      .calendar::after  { right: 22px; }
+
+      .big {
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+        line-height: 1;
+        margin: 18px 0 8px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        font-size: clamp(80px, 16vw, 160px);
+        position: relative;
+      }
+      .big .unit {
+        display: block;
+        font-size: clamp(14px, 2.2vw, 16px);
+        font-weight: 600;
+        color: var(--muted);
+        margin-top: 10px;
+        letter-spacing: .08em;
+      }
+      .flip {
+        animation: flipIn .7s ease both;
+        transform-origin: center -60px;
+      }
+      @keyframes flipIn {
+        0%   { transform: rotateX(-65deg); opacity: 0; filter: blur(2px); }
+        60%  { transform: rotateX(6deg); opacity: 1; filter: blur(0); }
+        100% { transform: rotateX(0deg); }
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        margin: 10px 4px 0;
+        color: #334155;
+        font-size: 14px;
+      }
+      .row { display: flex; align-items: center; gap: 8px; }
+      .row label { white-space: nowrap; }
+      .row strong { font-weight: 700; }
+
+      .pill {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: #0ea5e90d;
+        color: #0369a1;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .controls {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px dashed #e5e7eb;
+        display: grid;
+        gap: 10px;
+      }
+      .controls .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0,1fr));
+        gap: 8px 12px;
+      }
+      .controls input[type="date"],
+      .controls input[type="text"] {
+        width: 100%;
+        font: inherit;
+        padding: 6px 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+      }
+      .controls .check {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 14px;
+      }
+      .controls .small {
+        font-size: 12px; color: var(--muted);
+      }
+
+      .tag {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 2px 8px; border-radius: 999px; font-size: 12px;
+        background: #ef444414; color: #991b1b; font-weight: 700;
+      }
+
+      footer { color: var(--muted); font-size: 12px; text-align: center; }
+      a { color: #0369a1; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>退職まで 日めくりカウントダウン</h1>
+        <div class="pill" title="土日・祝日・年末年始を除外">
+          営業日換算 / Business days
+        </div>
+      </header>
+
+      <main>
+        <section class="calendar" aria-live="polite" aria-atomic="true">
+          <div id="count" class="big flip">--<span class="unit">営業日</span></div>
+
+          <div class="meta">
+            <div class="row">
+              <label>退職日:</label>
+              <strong id="retireLabel">-</strong>
+              <span id="retireWeek" class="tag">-</span>
+            </div>
+            <div class="row">
+              <label>今日:</label>
+              <span id="todayLabel">-</span>
+            </div>
+            <div class="row">
+              <label>次の出社日:</label>
+              <span id="nextBiz">-</span>
+            </div>
+            <div class="row">
+              <label>総営業日:</label>
+              <span id="baseBiz">-</span>
+            </div>
+            <div class="row">
+              <label>年休差引後:</label>
+              <span id="netBiz">-</span>
+            </div>
+            <div class="row">
+              <label>最終出社日:</label>
+              <span id="lastWork">-</span>
+            </div>
+          </div>
+
+          <div class="controls" id="controls">
+            <div class="grid">
+              <div>
+                <label for="retireDate">退職日</label>
+                <input type="date" id="retireDate" />
+              </div>
+              <div>
+                <label for="nenmatsu">年末年始(開始-終了)</label>
+                <input type="text" id="nenmatsu" placeholder="12-29,01-03" />
+                <div class="small">例) 12-29,01-03 を含めて休み</div>
+              </div>
+              <div>
+                <label for="paidLeaveDays">未取得の年休(日)</label>
+                <input type="number" id="paidLeaveDays" inputmode="numeric" min="0" step="1" placeholder="0" />
+                <div class="small">予定している年休消化日数 (営業日から減算)</div>
+              </div>
+            </div>
+            <div class="grid">
+              <label class="check">
+                <input type="checkbox" id="includeToday" />
+                今日が営業日の場合もカウントに含める
+              </label>
+              <label class="check">
+                <input type="checkbox" id="includeEnd" checked />
+                退職日が営業日の場合は含める
+              </label>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        祝日は日本の祝日法(振替休日/国民の祝日を含む)に基づき自動計算。春分/秋分は近似式(1900-2099)を使用。
+      </footer>
+    </div>
+
+    <script>
+      // ---------- Utilities ----------
+      const pad = (n) => String(n).padStart(2, '0');
+      const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      const parseYMD = (s) => { const [y,m,dd] = s.split('-').map(Number); return new Date(y, m-1, dd); };
+      const wdJP = ['日','月','火','水','木','金','土'];
+      const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
+      const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+
+      // ---------- Japanese Holidays ----------
+      function nthWeekdayOfMonth(year, monthIndex, weekday, n) {
+        const first = new Date(year, monthIndex, 1);
+        const offset = (7 + weekday - first.getDay()) % 7;
+        const day = 1 + offset + (n-1)*7;
+        return new Date(year, monthIndex, day);
+      }
+      function springEquinoxDay(year) {
+        // 1900-2099 approximation
+        return Math.floor(20.8431 + 0.242194 * (year - 1980)) - Math.floor((year - 1980)/4);
+      }
+      function autumnEquinoxDay(year) {
+        // 1900-2099 approximation
+        return Math.floor(23.2488 + 0.242194 * (year - 1980)) - Math.floor((year - 1980)/4);
+      }
+      function getJapaneseHolidays(year) {
+        const s = new Set();
+        const add = (d) => s.add(fmt(d));
+
+        // Fixed-date holidays
+        add(new Date(year, 0, 1));    // 元日 1/1
+        add(new Date(year, 1, 11));   // 建国記念の日 2/11
+        add(new Date(year, 1, 23));   // 天皇誕生日 2/23
+        add(new Date(year, 3, 29));   // 昭和の日 4/29
+        add(new Date(year, 4, 3));    // 憲法記念日 5/3
+        add(new Date(year, 4, 4));    // みどりの日 5/4
+        add(new Date(year, 4, 5));    // こどもの日 5/5
+        add(new Date(year, 7, 11));   // 山の日 8/11
+        add(new Date(year, 10, 3));   // 文化の日 11/3
+        add(new Date(year, 10, 23));  // 勤労感謝の日 11/23
+
+        // Happy Monday system
+        add(nthWeekdayOfMonth(year, 0, 1, 2));  // 成人の日 1月第2月曜
+        add(nthWeekdayOfMonth(year, 6, 1, 3));  // 海の日 7月第3月曜
+        add(nthWeekdayOfMonth(year, 8, 1, 3));  // 敬老の日 9月第3月曜
+        add(nthWeekdayOfMonth(year, 9, 1, 2));  // スポーツの日 10月第2月曜
+
+        // Equinox
+        add(new Date(year, 2, springEquinoxDay(year)));   // 春分の日
+        add(new Date(year, 8, autumnEquinoxDay(year)));    // 秋分の日
+
+        // Nation's Holiday (a weekday between two holidays)
+        const isHoliday = (d) => s.has(fmt(d));
+        for (let m = 0; m < 12; m++) {
+          const daysInMonth = new Date(year, m+1, 0).getDate();
+          for (let day = 1; day <= daysInMonth; day++) {
+            const d = new Date(year, m, day);
+            if (d.getDay() === 0 || d.getDay() === 6) continue; // Mon-Fri only
+            if (isHoliday(d)) continue;
+            const prev = addDays(d, -1), next = addDays(d, 1);
+            if (isHoliday(prev) && isHoliday(next)) add(d);
+          }
+        }
+
+        // Substitute Holiday (if holiday falls on Sunday)
+        const originals = Array.from(s).map(parseYMD).sort((a,b)=>a-b);
+        for (const d of originals) {
+          if (d.getDay() === 0) { // Sunday
+            let sub = addDays(d, 1);
+            while (s.has(fmt(sub))) sub = addDays(sub, 1);
+            add(sub);
+          }
+        }
+
+        return s;
+      }
+
+      function isWithinNenmatsu(d, nmStart = '12-29', nmEnd = '01-03') {
+        const [sm, sd] = nmStart.split('-').map(Number);
+        const [em, ed] = nmEnd.split('-').map(Number);
+        const m = d.getMonth() + 1, day = d.getDate();
+        const crossesYear = sm > em; // e.g., 12-29 .. 01-03
+        if (crossesYear) {
+          return (m === sm && day >= sd) || (m === em && day <= ed);
+        } else {
+          if (m < sm || m > em) return false;
+          if (m === sm && day < sd) return false;
+          if (m === em && day > ed) return false;
+          return true;
+        }
+      }
+
+      function isBusinessDay(d, holidayCache, nmStart, nmEnd) {
+        if (isWeekend(d)) return false;
+        if (holidayCache.has(d.getFullYear()) && holidayCache.get(d.getFullYear()).has(fmt(d))) return false;
+        if (isWithinNenmatsu(d, nmStart, nmEnd)) return false;
+        return true;
+      }
+
+      function nextBusinessDay(from, holidayCache, nmStart, nmEnd) {
+        let d = new Date(from);
+        for (let i=0;i<370;i++) { // guard
+          if (isBusinessDay(d, holidayCache, nmStart, nmEnd)) return d;
+          d = addDays(d, 1);
+        }
+        return d;
+      }
+
+      function businessDaysBetween(start, end, opts) {
+        // Count business days from start..end with inclusivity options
+        const { includeStart = false, includeEnd = true, nmStart, nmEnd, holidayCache } = opts;
+        if (fmt(start) > fmt(end)) return 0;
+        let d = new Date(start);
+        let count = 0;
+        while (fmt(d) <= fmt(end)) {
+          const atStart = fmt(d) === fmt(start);
+          const atEnd = fmt(d) === fmt(end);
+          const include = (atStart ? includeStart : (atEnd ? includeEnd : true));
+          if (include && isBusinessDay(d, holidayCache, nmStart, nmEnd)) count++;
+          d = addDays(d, 1);
+        }
+        return count;
+      }
+
+      // ---------- State & UI ----------
+      const els = {
+        count: document.getElementById('count'),
+        retireLabel: document.getElementById('retireLabel'),
+        retireWeek: document.getElementById('retireWeek'),
+        todayLabel: document.getElementById('todayLabel'),
+        nextBiz: document.getElementById('nextBiz'),
+        baseBiz: document.getElementById('baseBiz'),
+        netBiz: document.getElementById('netBiz'),
+        lastWork: document.getElementById('lastWork'),
+        retireDate: document.getElementById('retireDate'),
+        nenmatsu: document.getElementById('nenmatsu'),
+        includeToday: document.getElementById('includeToday'),
+        includeEnd: document.getElementById('includeEnd'),
+        paidLeaveDays: document.getElementById('paidLeaveDays'),
+      };
+
+      const DEFAULTS = {
+        retireDate: '2026-03-31',
+        includeToday: false,
+        includeEnd: true,
+        nenmatsu: '12-29,01-03',
+        paidLeaveDays: 0,
+      };
+
+      function loadSettings() {
+        try { return JSON.parse(localStorage.getItem('retire-countdown-settings')) || DEFAULTS; }
+        catch { return DEFAULTS; }
+      }
+      function saveSettings(s) {
+        localStorage.setItem('retire-countdown-settings', JSON.stringify(s));
+      }
+
+      const holidayCache = new Map();
+      function ensureHoliday(year) {
+        if (!holidayCache.has(year)) holidayCache.set(year, getJapaneseHolidays(year));
+      }
+
+      function render() {
+        const settings = loadSettings();
+        const [nmStart, nmEnd] = settings.nenmatsu.split(',').map(x => x.trim());
+
+        // Ensure holiday sets for all relevant years
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const retire = parseYMD(settings.retireDate);
+        for (let y = today.getFullYear()-1; y <= retire.getFullYear()+1; y++) ensureHoliday(y);
+
+        // Labels
+        els.retireLabel.textContent = `${fmt(retire)}`;
+        els.retireWeek.textContent = `(${wdJP[retire.getDay()]})`;
+
+        const todayStr = `${fmt(today)} (${wdJP[today.getDay()]})`;
+        const todayIsBiz = isBusinessDay(today, holidayCache, nmStart, nmEnd);
+        els.todayLabel.textContent = `${todayStr} – ${todayIsBiz ? '営業日' : '休み'}`;
+
+        const from = today;
+        const baseCount = businessDaysBetween(from, retire, {
+          includeStart: settings.includeToday,
+          includeEnd: settings.includeEnd,
+          nmStart, nmEnd, holidayCache
+        });
+        const paidLeave = Number.isFinite(+settings.paidLeaveDays) ? Math.max(0, Math.floor(+settings.paidLeaveDays)) : 0;
+        const count = Math.max(0, baseCount - paidLeave);
+
+        // Next business day (from today or tomorrow depending on includeToday)
+        const startForNext = settings.includeToday ? today : addDays(today, 1);
+        const nb = nextBusinessDay(startForNext, holidayCache, nmStart, nmEnd);
+        els.nextBiz.textContent = `${fmt(nb)} (${wdJP[nb.getDay()]})`;
+
+        // Totals display
+        els.baseBiz.textContent = `${baseCount} 日`;
+        els.netBiz.textContent = `${count} 日 (年休 ${paidLeave} 日消化)`;
+
+        // Last working day calculation
+        const periodStart = settings.includeToday ? today : addDays(today, 1);
+        const periodEnd = settings.includeEnd ? retire : addDays(retire, -1);
+        let lastWorkText = '-';
+        if (fmt(periodEnd) < fmt(periodStart) || baseCount === 0) {
+          // No business days in period
+          lastWorkText = 'なし（出社日なし）';
+        } else if (count === 0) {
+          lastWorkText = '本日以降は出社不要（全て年休で消化）';
+        } else {
+          // Find the Nth business day from periodStart (N = count)
+          let d = new Date(periodStart);
+          let seen = 0;
+          for (let i = 0; i < 2000; i++) {
+            if (isBusinessDay(d, holidayCache, nmStart, nmEnd)) {
+              seen++;
+              if (seen === count) {
+                lastWorkText = `${fmt(d)} (${wdJP[d.getDay()]})`;
+                break;
+              }
+            }
+            d = addDays(d, 1);
+            if (fmt(d) > fmt(periodEnd)) break;
+          }
+          if (lastWorkText === '-') lastWorkText = '計算範囲外';
+        }
+        els.lastWork.textContent = lastWorkText;
+
+        // Update big number with flip effect
+        const prev = els.count.getAttribute('data-val');
+        els.count.setAttribute('data-val', String(count));
+        els.count.innerHTML = `${count}<span class="unit">営業日</span>`;
+        if (prev !== String(count)) {
+          els.count.classList.remove('flip');
+          void els.count.offsetWidth; // reflow
+          els.count.classList.add('flip');
+        }
+
+        // Sync controls UI
+        els.retireDate.value = settings.retireDate;
+        els.nenmatsu.value = settings.nenmatsu;
+        els.includeToday.checked = !!settings.includeToday;
+        els.includeEnd.checked = !!settings.includeEnd;
+        els.paidLeaveDays.value = String(paidLeave);
+      }
+
+      function init() {
+        // Wire inputs
+        const debounced = (fn, t=150) => { let id; return (...a) => { clearTimeout(id); id = setTimeout(()=>fn(...a), t); }; };
+        const update = debounced(() => {
+          const data = loadSettings();
+          const rd = els.retireDate.value || DEFAULTS.retireDate;
+          const nm = (els.nenmatsu.value || DEFAULTS.nenmatsu).replace(/\s+/g, '');
+          const okNm = /^\d{2}-\d{2},\d{2}-\d{2}$/.test(nm);
+          const plRaw = els.paidLeaveDays.value;
+          const pl = Math.max(0, Math.floor(Number(plRaw)) || 0);
+          const next = {
+            ...data,
+            retireDate: rd,
+            nenmatsu: okNm ? nm : DEFAULTS.nenmatsu,
+            includeToday: !!els.includeToday.checked,
+            includeEnd: !!els.includeEnd.checked,
+            paidLeaveDays: pl,
+          };
+          saveSettings(next);
+          render();
+        }, 60);
+
+        els.retireDate.addEventListener('change', update);
+        els.nenmatsu.addEventListener('input', update);
+        els.includeToday.addEventListener('change', update);
+        els.includeEnd.addEventListener('change', update);
+        els.paidLeaveDays.addEventListener('input', update);
+
+        // First render
+        render();
+
+        // Tick at next midnight (local time)
+        const now = new Date();
+        const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0, 0, 2);
+        const ms = midnight - now;
+        setTimeout(() => {
+          render();
+          setInterval(render, 24*60*60*1000);
+        }, ms);
+      }
+
+      init();
+    </script>
+  </body>
+  </html>
