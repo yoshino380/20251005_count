@@ -150,6 +150,7 @@
       footer { color: var(--muted); font-size: 12px; text-align: center; }
       a { color: #0369a1; text-decoration: none; }
       a:hover { text-decoration: underline; }
+      .invalid { border-color: #ef4444 !important; background: #fee2e2 !important; }
     </style>
   </head>
   <body>
@@ -202,7 +203,14 @@
               <div>
                 <label for="nenmatsu">年末年始(開始-終了)</label>
                 <input type="text" id="nenmatsu" placeholder="12-29,01-03" />
-                <div class="small">例) 12-29,01-03 を含めて休み</div>
+                <div class="small">例) 12-29,01-03 を含めて休み（区切りは -, /, ., 〜 など可）</div>
+                <div id="nenmatsuError" class="small" aria-live="polite" style="display:none;color:#b91c1c;">形式は MM-DD,MM-DD です</div>
+              </div>
+              <div>
+                <label for="specialDays">特別休日（日付/範囲・複数可）</label>
+                <input type="text" id="specialDays" placeholder="01-04, 02-10, 05-02~05-03, 2025-02-10" />
+                <div class="small">形式: YYYY-MM-DD または MM-DD、範囲は ~ で指定（例: 08-13~08-16）</div>
+                <div id="specialError" class="small" aria-live="polite" style="display:none;color:#b91c1c;">読み取れない項目を無視しました</div>
               </div>
               <div>
                 <label for="paidLeaveDays">未取得の年休(日)</label>
@@ -237,6 +245,24 @@
       const wdJP = ['日','月','火','水','木','金','土'];
       const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
       const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+
+      // Flexible parsing for "MM-DD,MM-DD" allowing various separators and full-width digits
+      function normalizeDigits(str) {
+        return str.replace(/[０-９]/g, (c) => String(c.charCodeAt(0) - '０'.charCodeAt(0)));
+      }
+      function parseNenmatsu(raw) {
+        if (raw == null) return { ok: true, value: DEFAULTS.nenmatsu };
+        const s = normalizeDigits(String(raw)).toLowerCase();
+        // Replace any non-digit with space, then pick first 4 numbers
+        const nums = s.replace(/[^0-9]+/g, ' ').trim().match(/\d{1,2}/g) || [];
+        if (nums.length < 4) return { ok: false };
+        let [m1, d1, m2, d2] = nums.slice(0,4).map(n => parseInt(n, 10));
+        const inRange = (m,d) => m>=1 && m<=12 && d>=1 && d<=31;
+        if (!inRange(m1,d1) || !inRange(m2,d2)) return { ok: false };
+        const pad2 = (n) => String(n).padStart(2, '0');
+        const value = `${pad2(m1)}-${pad2(d1)},${pad2(m2)}-${pad2(d2)}`;
+        return { ok: true, value };
+      }
 
       // ---------- Japanese Holidays ----------
       function nthWeekdayOfMonth(year, monthIndex, weekday, n) {
@@ -320,17 +346,123 @@
         }
       }
 
-      function isBusinessDay(d, holidayCache, nmStart, nmEnd) {
+      // ---------- Special Holidays (user-defined) ----------
+      function normalizeSpecial(raw) {
+        if (raw == null) return { ok: true, normalized: '', entries: [], invalid: [] };
+        const cleaned = normalizeDigits(String(raw))
+          .replace(/[、，；;]+/g, ' ')
+          .replace(/[～〜]/g, '~')
+          .toLowerCase();
+        const tokens = cleaned.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+        const pad2 = (n) => String(n).padStart(2, '0');
+        const pad4 = (n) => String(n).padStart(4, '0');
+        const entries = [];
+        const normalizedList = [];
+        const invalid = [];
+
+        const parseMDorYMD = (s) => {
+          const nums = s.match(/\d{1,4}/g) || [];
+          if (nums.length >= 3) {
+            const [y, m, d] = nums.slice(0,3).map(n => parseInt(n, 10));
+            if (!(y >= 1900 && y <= 3000)) return null;
+            if (!(m >=1 && m<=12 && d>=1 && d<=31)) return null;
+            return { kind: 'ymd', y, m, d };
+          } else if (nums.length >= 2) {
+            const [m, d] = nums.slice(0,2).map(n => parseInt(n, 10));
+            if (!(m >=1 && m<=12 && d>=1 && d<=31)) return null;
+            return { kind: 'md', m, d };
+          }
+          return null;
+        };
+
+        for (const t of tokens) {
+          if (t.includes('~')) {
+            const [a, b] = t.split('~');
+            const A = parseMDorYMD(a), B = parseMDorYMD(b);
+            if (!A || !B) { invalid.push(t); continue; }
+            if (A.kind !== B.kind) { invalid.push(t); continue; }
+            if (A.kind === 'ymd') {
+              entries.push({ type: 'range_ymd', y1: A.y, m1: A.m, d1: A.d, y2: B.y, m2: B.m, d2: B.d });
+              normalizedList.push(`${pad4(A.y)}-${pad2(A.m)}-${pad2(A.d)}~${pad4(B.y)}-${pad2(B.m)}-${pad2(B.d)}`);
+            } else {
+              entries.push({ type: 'range_md', m1: A.m, d1: A.d, m2: B.m, d2: B.d });
+              normalizedList.push(`${pad2(A.m)}-${pad2(A.d)}~${pad2(B.m)}-${pad2(B.d)}`);
+            }
+          } else {
+            const A = parseMDorYMD(t);
+            if (!A) { invalid.push(t); continue; }
+            if (A.kind === 'ymd') {
+              entries.push({ type: 'ymd', y: A.y, m: A.m, d: A.d });
+              normalizedList.push(`${pad4(A.y)}-${pad2(A.m)}-${pad2(A.d)}`);
+            } else {
+              entries.push({ type: 'md', m: A.m, d: A.d });
+              normalizedList.push(`${pad2(A.m)}-${pad2(A.d)}`);
+            }
+          }
+        }
+
+        const ok = tokens.length === 0 || entries.length > 0;
+        return { ok, normalized: normalizedList.join(', '), entries, invalid };
+      }
+
+      function buildSpecialHolidaySet(raw, fromYear, toYear) {
+        const { entries } = normalizeSpecial(raw);
+        const set = new Set();
+        const pushDate = (y, m, d) => set.add(`${pad(y)}-${pad(m)}-${pad(d)}`.replace(/^(\d{2})(?=\-)/, (s)=>String(y))); // ensure YYYY-MM-DD
+        const fmtLocal = (date) => `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`;
+        const pushRange = (start, end) => {
+          let d = new Date(start);
+          for (let i=0; i<2000 && fmtLocal(d) <= fmtLocal(end); i++) {
+            set.add(fmtLocal(d));
+            d = addDays(d, 1);
+          }
+        };
+        const mdGreater = (m1,d1,m2,d2) => (m1>m2) || (m1===m2 && d1>d2);
+        for (const e of entries) {
+          switch (e.type) {
+            case 'ymd': {
+              const d = new Date(e.y, e.m-1, e.d);
+              set.add(fmtLocal(d));
+              break;
+            }
+            case 'md': {
+              for (let y=fromYear; y<=toYear; y++) {
+                const d = new Date(y, e.m-1, e.d);
+                set.add(fmtLocal(d));
+              }
+              break;
+            }
+            case 'range_ymd': {
+              const s = new Date(e.y1, e.m1-1, e.d1);
+              const t = new Date(e.y2, e.m2-1, e.d2);
+              pushRange(s, t);
+              break;
+            }
+            case 'range_md': {
+              for (let y=fromYear; y<=toYear; y++) {
+                const s = new Date(y, e.m1-1, e.d1);
+                const t = mdGreater(e.m1,e.d1,e.m2,e.d2) ? new Date(y+1, e.m2-1, e.d2) : new Date(y, e.m2-1, e.d2);
+                pushRange(s, t);
+              }
+              break;
+            }
+          }
+        }
+        return set;
+      }
+
+      function isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet) {
         if (isWeekend(d)) return false;
         if (holidayCache.has(d.getFullYear()) && holidayCache.get(d.getFullYear()).has(fmt(d))) return false;
         if (isWithinNenmatsu(d, nmStart, nmEnd)) return false;
+        if (specialSet && specialSet.has(fmt(d))) return false;
         return true;
       }
 
-      function nextBusinessDay(from, holidayCache, nmStart, nmEnd) {
+      function nextBusinessDay(from, holidayCache, nmStart, nmEnd, specialSet) {
         let d = new Date(from);
         for (let i=0;i<370;i++) { // guard
-          if (isBusinessDay(d, holidayCache, nmStart, nmEnd)) return d;
+          if (isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet)) return d;
           d = addDays(d, 1);
         }
         return d;
@@ -338,7 +470,7 @@
 
       function businessDaysBetween(start, end, opts) {
         // Count business days from start..end with inclusivity options
-        const { includeStart = false, includeEnd = true, nmStart, nmEnd, holidayCache } = opts;
+        const { includeStart = false, includeEnd = true, nmStart, nmEnd, holidayCache, specialSet } = opts;
         if (fmt(start) > fmt(end)) return 0;
         let d = new Date(start);
         let count = 0;
@@ -346,7 +478,7 @@
           const atStart = fmt(d) === fmt(start);
           const atEnd = fmt(d) === fmt(end);
           const include = (atStart ? includeStart : (atEnd ? includeEnd : true));
-          if (include && isBusinessDay(d, holidayCache, nmStart, nmEnd)) count++;
+          if (include && isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet)) count++;
           d = addDays(d, 1);
         }
         return count;
@@ -364,6 +496,9 @@
         lastWork: document.getElementById('lastWork'),
         retireDate: document.getElementById('retireDate'),
         nenmatsu: document.getElementById('nenmatsu'),
+        nenmatsuError: document.getElementById('nenmatsuError'),
+        specialDays: document.getElementById('specialDays'),
+        specialError: document.getElementById('specialError'),
         includeToday: document.getElementById('includeToday'),
         includeEnd: document.getElementById('includeEnd'),
         paidLeaveDays: document.getElementById('paidLeaveDays'),
@@ -374,6 +509,7 @@
         includeToday: false,
         includeEnd: true,
         nenmatsu: '12-29,01-03',
+        specialHolidays: '',
         paidLeaveDays: 0,
       };
 
@@ -399,27 +535,31 @@
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const retire = parseYMD(settings.retireDate);
         for (let y = today.getFullYear()-1; y <= retire.getFullYear()+1; y++) ensureHoliday(y);
+        const fromYear = Math.min(today.getFullYear(), retire.getFullYear()) - 1;
+        const toYear = Math.max(today.getFullYear(), retire.getFullYear()) + 1;
+        const specialSet = buildSpecialHolidaySet(settings.specialHolidays || '', fromYear, toYear);
 
         // Labels
         els.retireLabel.textContent = `${fmt(retire)}`;
         els.retireWeek.textContent = `(${wdJP[retire.getDay()]})`;
 
         const todayStr = `${fmt(today)} (${wdJP[today.getDay()]})`;
-        const todayIsBiz = isBusinessDay(today, holidayCache, nmStart, nmEnd);
+        const todayIsBiz = isBusinessDay(today, holidayCache, nmStart, nmEnd, specialSet);
         els.todayLabel.textContent = `${todayStr} – ${todayIsBiz ? '営業日' : '休み'}`;
 
         const from = today;
         const baseCount = businessDaysBetween(from, retire, {
           includeStart: settings.includeToday,
           includeEnd: settings.includeEnd,
-          nmStart, nmEnd, holidayCache
+          nmStart, nmEnd, holidayCache,
+          specialSet
         });
         const paidLeave = Number.isFinite(+settings.paidLeaveDays) ? Math.max(0, Math.floor(+settings.paidLeaveDays)) : 0;
         const count = Math.max(0, baseCount - paidLeave);
 
         // Next business day (from today or tomorrow depending on includeToday)
         const startForNext = settings.includeToday ? today : addDays(today, 1);
-        const nb = nextBusinessDay(startForNext, holidayCache, nmStart, nmEnd);
+        const nb = nextBusinessDay(startForNext, holidayCache, nmStart, nmEnd, specialSet);
         els.nextBiz.textContent = `${fmt(nb)} (${wdJP[nb.getDay()]})`;
 
         // Totals display
@@ -440,7 +580,7 @@
           let d = new Date(periodStart);
           let seen = 0;
           for (let i = 0; i < 2000; i++) {
-            if (isBusinessDay(d, holidayCache, nmStart, nmEnd)) {
+            if (isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet)) {
               seen++;
               if (seen === count) {
                 lastWorkText = `${fmt(d)} (${wdJP[d.getDay()]})`;
@@ -466,10 +606,21 @@
 
         // Sync controls UI
         els.retireDate.value = settings.retireDate;
-        els.nenmatsu.value = settings.nenmatsu;
+        // 入力中に値が巻き戻らないよう、フォーカス時は同期しない
+        if (document.activeElement !== els.nenmatsu) {
+          els.nenmatsu.value = settings.nenmatsu;
+        }
+        if (document.activeElement !== els.specialDays) {
+          els.specialDays.value = settings.specialHolidays || '';
+        }
         els.includeToday.checked = !!settings.includeToday;
         els.includeEnd.checked = !!settings.includeEnd;
         els.paidLeaveDays.value = String(paidLeave);
+        // clear validation state on render
+        els.nenmatsu.classList.remove('invalid');
+        if (els.nenmatsuError) els.nenmatsuError.style.display = 'none';
+        if (els.specialDays) els.specialDays.classList.remove('invalid');
+        if (els.specialError) els.specialError.style.display = 'none';
       }
 
       function init() {
@@ -478,14 +629,36 @@
         const update = debounced(() => {
           const data = loadSettings();
           const rd = els.retireDate.value || DEFAULTS.retireDate;
-          const nm = (els.nenmatsu.value || DEFAULTS.nenmatsu).replace(/\s+/g, '');
-          const okNm = /^\d{2}-\d{2},\d{2}-\d{2}$/.test(nm);
+          const parsed = parseNenmatsu(els.nenmatsu.value);
+          const nmFinal = parsed.ok ? parsed.value : (data.nenmatsu || DEFAULTS.nenmatsu);
+          // UI feedback for validation
+          if (!parsed.ok) {
+            els.nenmatsu.classList.add('invalid');
+            if (els.nenmatsuError) els.nenmatsuError.style.display = '';
+          } else {
+            els.nenmatsu.classList.remove('invalid');
+            if (els.nenmatsuError) els.nenmatsuError.style.display = 'none';
+          }
+          // special holidays
+          const specialRaw = els.specialDays.value;
+          const specParsed = normalizeSpecial(specialRaw);
+          const hasInput = (specialRaw || '').trim().length > 0;
+          const hasValid = specParsed.entries.length > 0;
+          const specialFinal = (hasInput && !hasValid) ? (data.specialHolidays || '') : specParsed.normalized;
+          if (hasInput && !hasValid) {
+            if (els.specialDays) els.specialDays.classList.add('invalid');
+            if (els.specialError) els.specialError.style.display = '';
+          } else {
+            if (els.specialDays) els.specialDays.classList.remove('invalid');
+            if (els.specialError) els.specialError.style.display = 'none';
+          }
           const plRaw = els.paidLeaveDays.value;
           const pl = Math.max(0, Math.floor(Number(plRaw)) || 0);
           const next = {
             ...data,
             retireDate: rd,
-            nenmatsu: okNm ? nm : DEFAULTS.nenmatsu,
+            nenmatsu: nmFinal,
+            specialHolidays: specialFinal,
             includeToday: !!els.includeToday.checked,
             includeEnd: !!els.includeEnd.checked,
             paidLeaveDays: pl,
@@ -495,7 +668,11 @@
         }, 60);
 
         els.retireDate.addEventListener('change', update);
+        // 入力中は上書きしないガードがあるため、入力で即時反映
         els.nenmatsu.addEventListener('input', update);
+        els.nenmatsu.addEventListener('change', update);
+        els.specialDays.addEventListener('input', update);
+        els.specialDays.addEventListener('change', update);
         els.includeToday.addEventListener('change', update);
         els.includeEnd.addEventListener('change', update);
         els.paidLeaveDays.addEventListener('input', update);
