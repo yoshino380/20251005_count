@@ -87,12 +87,12 @@
         margin: 6px 0 12px;
         font-weight: 800;
         letter-spacing: -0.02em;
-        font-size: clamp(42px, 10vw, 96px);
+        font-size: clamp(36px, 8.8vw, 84px);
         position: relative;
       }
       .big-sub .unit {
         display: block;
-        font-size: clamp(12px, 2.0vw, 15px);
+        font-size: clamp(11px, 1.8vw, 14px);
         font-weight: 600;
         color: var(--muted);
         margin-top: 8px;
@@ -106,6 +106,14 @@
         0%   { transform: rotateX(-65deg); opacity: 0; filter: blur(2px); }
         60%  { transform: rotateX(6deg); opacity: 1; filter: blur(0); }
         100% { transform: rotateX(0deg); }
+      }
+
+      .big-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 16px;
+        align-items: start;
+        justify-items: center;
       }
 
       .meta {
@@ -183,8 +191,10 @@
       <main>
         <section class="calendar" aria-live="polite" aria-atomic="true">
           <div id="count" class="big flip">--<span class="unit">営業日</span></div>
-          <div id="baseBizBig" class="big-sub flip">--<span class="unit">総営業日</span></div>
-          <div id="daysLeftBig" class="big-sub flip">--<span class="unit">日（暦日）</span></div>
+          <div class="big-row">
+            <div id="baseBizBig" class="big-sub flip">--<span class="unit">総営業日</span></div>
+            <div id="daysLeftBig" class="big-sub flip">--<span class="unit">日（暦日）</span></div>
+          </div>
 
           <div class="meta">
             <div class="row">
@@ -199,10 +209,6 @@
             <div class="row">
               <label>次の出社日:</label>
               <span id="nextBiz">-</span>
-            </div>
-            <div class="row">
-              <label>総営業日:</label>
-              <span id="baseBiz">-</span>
             </div>
             <div class="row">
               <label>年休差引後:</label>
@@ -520,7 +526,6 @@
         retireWeek: document.getElementById('retireWeek'),
         todayLabel: document.getElementById('todayLabel'),
         nextBiz: document.getElementById('nextBiz'),
-        baseBiz: document.getElementById('baseBiz'),
         netBiz: document.getElementById('netBiz'),
         lastWork: document.getElementById('lastWork'),
         baseBizBig: document.getElementById('baseBizBig'),
@@ -611,7 +616,6 @@
         els.nextBiz.textContent = `${fmt(nb)} (${wdJP[nb.getDay()]})`;
 
         // Totals display
-        els.baseBiz.textContent = `${baseCount} 日`;
         els.netBiz.textContent = `${count} 日 (年休 ${paidLeave} 日消化)`;
 
         // Big display for 総営業日
