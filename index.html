@@ -213,6 +213,12 @@
                 <div id="specialError" class="small" aria-live="polite" style="display:none;color:#b91c1c;">読み取れない項目を無視しました</div>
               </div>
               <div>
+                <label for="workDays">休日出勤日（日付/範囲・複数可）</label>
+                <input type="text" id="workDays" placeholder="01-04, 02-10, 05-02~05-03, 2025-02-10" />
+                <div class="small">休みでも出社する日を追加（営業日に含める）。形式は上と同じです。</div>
+                <div id="workError" class="small" aria-live="polite" style="display:none;color:#b91c1c;">読み取れない項目を無視しました</div>
+              </div>
+              <div>
                 <label for="paidLeaveDays">未取得の年休(日)</label>
                 <input type="number" id="paidLeaveDays" inputmode="numeric" min="0" step="1" placeholder="0" />
                 <div class="small">予定している年休消化日数 (営業日から減算)</div>
@@ -451,7 +457,9 @@
         return set;
       }
 
-      function isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet) {
+      function isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet, workSet) {
+        // 休日出勤の指定があれば最優先で営業日にする
+        if (workSet && workSet.has(fmt(d))) return true;
         if (isWeekend(d)) return false;
         if (holidayCache.has(d.getFullYear()) && holidayCache.get(d.getFullYear()).has(fmt(d))) return false;
         if (isWithinNenmatsu(d, nmStart, nmEnd)) return false;
@@ -459,10 +467,10 @@
         return true;
       }
 
-      function nextBusinessDay(from, holidayCache, nmStart, nmEnd, specialSet) {
+      function nextBusinessDay(from, holidayCache, nmStart, nmEnd, specialSet, workSet) {
         let d = new Date(from);
         for (let i=0;i<370;i++) { // guard
-          if (isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet)) return d;
+          if (isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet, workSet)) return d;
           d = addDays(d, 1);
         }
         return d;
@@ -470,7 +478,7 @@
 
       function businessDaysBetween(start, end, opts) {
         // Count business days from start..end with inclusivity options
-        const { includeStart = false, includeEnd = true, nmStart, nmEnd, holidayCache, specialSet } = opts;
+        const { includeStart = false, includeEnd = true, nmStart, nmEnd, holidayCache, specialSet, workSet } = opts;
         if (fmt(start) > fmt(end)) return 0;
         let d = new Date(start);
         let count = 0;
@@ -478,7 +486,7 @@
           const atStart = fmt(d) === fmt(start);
           const atEnd = fmt(d) === fmt(end);
           const include = (atStart ? includeStart : (atEnd ? includeEnd : true));
-          if (include && isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet)) count++;
+          if (include && isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet, workSet)) count++;
           d = addDays(d, 1);
         }
         return count;
@@ -499,6 +507,8 @@
         nenmatsuError: document.getElementById('nenmatsuError'),
         specialDays: document.getElementById('specialDays'),
         specialError: document.getElementById('specialError'),
+        workDays: document.getElementById('workDays'),
+        workError: document.getElementById('workError'),
         includeToday: document.getElementById('includeToday'),
         includeEnd: document.getElementById('includeEnd'),
         paidLeaveDays: document.getElementById('paidLeaveDays'),
@@ -510,6 +520,7 @@
         includeEnd: true,
         nenmatsu: '12-29,01-03',
         specialHolidays: '',
+        workOnHolidays: '',
         paidLeaveDays: 0,
       };
 
@@ -538,13 +549,14 @@
         const fromYear = Math.min(today.getFullYear(), retire.getFullYear()) - 1;
         const toYear = Math.max(today.getFullYear(), retire.getFullYear()) + 1;
         const specialSet = buildSpecialHolidaySet(settings.specialHolidays || '', fromYear, toYear);
+        const workSet = buildSpecialHolidaySet(settings.workOnHolidays || '', fromYear, toYear);
 
         // Labels
         els.retireLabel.textContent = `${fmt(retire)}`;
         els.retireWeek.textContent = `(${wdJP[retire.getDay()]})`;
 
         const todayStr = `${fmt(today)} (${wdJP[today.getDay()]})`;
-        const todayIsBiz = isBusinessDay(today, holidayCache, nmStart, nmEnd, specialSet);
+        const todayIsBiz = isBusinessDay(today, holidayCache, nmStart, nmEnd, specialSet, workSet);
         els.todayLabel.textContent = `${todayStr} – ${todayIsBiz ? '営業日' : '休み'}`;
 
         const from = today;
@@ -552,14 +564,15 @@
           includeStart: settings.includeToday,
           includeEnd: settings.includeEnd,
           nmStart, nmEnd, holidayCache,
-          specialSet
+          specialSet,
+          workSet,
         });
         const paidLeave = Number.isFinite(+settings.paidLeaveDays) ? Math.max(0, Math.floor(+settings.paidLeaveDays)) : 0;
         const count = Math.max(0, baseCount - paidLeave);
 
         // Next business day (from today or tomorrow depending on includeToday)
         const startForNext = settings.includeToday ? today : addDays(today, 1);
-        const nb = nextBusinessDay(startForNext, holidayCache, nmStart, nmEnd, specialSet);
+        const nb = nextBusinessDay(startForNext, holidayCache, nmStart, nmEnd, specialSet, workSet);
         els.nextBiz.textContent = `${fmt(nb)} (${wdJP[nb.getDay()]})`;
 
         // Totals display
@@ -580,7 +593,7 @@
           let d = new Date(periodStart);
           let seen = 0;
           for (let i = 0; i < 2000; i++) {
-            if (isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet)) {
+            if (isBusinessDay(d, holidayCache, nmStart, nmEnd, specialSet, workSet)) {
               seen++;
               if (seen === count) {
                 lastWorkText = `${fmt(d)} (${wdJP[d.getDay()]})`;
@@ -613,6 +626,9 @@
         if (document.activeElement !== els.specialDays) {
           els.specialDays.value = settings.specialHolidays || '';
         }
+        if (document.activeElement !== els.workDays) {
+          els.workDays.value = settings.workOnHolidays || '';
+        }
         els.includeToday.checked = !!settings.includeToday;
         els.includeEnd.checked = !!settings.includeEnd;
         els.paidLeaveDays.value = String(paidLeave);
@@ -621,6 +637,8 @@
         if (els.nenmatsuError) els.nenmatsuError.style.display = 'none';
         if (els.specialDays) els.specialDays.classList.remove('invalid');
         if (els.specialError) els.specialError.style.display = 'none';
+        if (els.workDays) els.workDays.classList.remove('invalid');
+        if (els.workError) els.workError.style.display = 'none';
       }
 
       function init() {
@@ -652,6 +670,19 @@
             if (els.specialDays) els.specialDays.classList.remove('invalid');
             if (els.specialError) els.specialError.style.display = 'none';
           }
+          // work-on-holidays (force business day)
+          const workRaw = els.workDays.value;
+          const workParsed = normalizeSpecial(workRaw);
+          const workHasInput = (workRaw || '').trim().length > 0;
+          const workHasValid = workParsed.entries.length > 0;
+          const workFinal = (workHasInput && !workHasValid) ? (data.workOnHolidays || '') : workParsed.normalized;
+          if (workHasInput && !workHasValid) {
+            if (els.workDays) els.workDays.classList.add('invalid');
+            if (els.workError) els.workError.style.display = '';
+          } else {
+            if (els.workDays) els.workDays.classList.remove('invalid');
+            if (els.workError) els.workError.style.display = 'none';
+          }
           const plRaw = els.paidLeaveDays.value;
           const pl = Math.max(0, Math.floor(Number(plRaw)) || 0);
           const next = {
@@ -659,6 +690,7 @@
             retireDate: rd,
             nenmatsu: nmFinal,
             specialHolidays: specialFinal,
+            workOnHolidays: workFinal,
             includeToday: !!els.includeToday.checked,
             includeEnd: !!els.includeEnd.checked,
             paidLeaveDays: pl,
@@ -673,6 +705,10 @@
         els.nenmatsu.addEventListener('change', update);
         els.specialDays.addEventListener('input', update);
         els.specialDays.addEventListener('change', update);
+        if (els.workDays) {
+          els.workDays.addEventListener('input', update);
+          els.workDays.addEventListener('change', update);
+        }
         els.includeToday.addEventListener('change', update);
         els.includeEnd.addEventListener('change', update);
         els.paidLeaveDays.addEventListener('input', update);
