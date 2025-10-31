@@ -193,7 +193,7 @@
           <div id="count" class="big flip">--<span class="unit">営業日</span></div>
           <div class="big-row">
             <div id="baseBizBig" class="big-sub flip">--<span class="unit">総営業日</span></div>
-            <div id="daysLeftBig" class="big-sub flip">--<span class="unit">日（暦日）</span></div>
+            <div id="daysLeftBig" class="big-sub flip">--<span class="unit">日前（退職日=0）</span></div>
           </div>
 
           <div class="meta">
@@ -587,12 +587,12 @@
         const todayIsBiz = isBusinessDay(today, holidayCache, nmStart, nmEnd, specialSet, workSet);
         els.todayLabel.textContent = `${todayStr} – ${todayIsBiz ? '営業日' : '休み'}`;
 
-        // Calendar days left (excluding today; floor difference)
+        // Calendar days left as "n日前" with retire date as day 0
         const msPerDay = 24*60*60*1000;
         const daysLeft = Math.max(0, Math.floor((retire - today) / msPerDay));
         const prevDays = els.daysLeftBig.getAttribute('data-val');
         els.daysLeftBig.setAttribute('data-val', String(daysLeft));
-        els.daysLeftBig.innerHTML = `${daysLeft}<span class="unit">${fmtSlash(retire)}までの総日数</span>`;
+        els.daysLeftBig.innerHTML = `${daysLeft}<span class="unit">日前（退職日=0）</span>`;
         if (prevDays !== String(daysLeft)) {
           els.daysLeftBig.classList.remove('flip');
           void els.daysLeftBig.offsetWidth; // reflow
